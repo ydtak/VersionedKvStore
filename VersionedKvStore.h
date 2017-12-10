@@ -56,6 +56,25 @@ private:
         return d1->value == d2->value && d1->deleted == d2->deleted;
     }
 
+    /** 
+     * Returns latest version of diff for key not greater than version_num. 
+     * Returns nullptr if no such diff exists. 
+     */
+    Diff* traverseToVersion(K key, int version_num) {
+        Diff* curr = key_value_store[key];
+
+        // traverse to diff having prev_diff not greater than version_num
+        while (curr && curr->prev_diff && version_num < curr->prev_diff->version) {
+            curr = curr->prev_diff;
+        }
+
+        // get prev_diff if current diff has version_num greater than that requested
+        if (curr && version_num < curr->version) {
+            curr = curr->prev_diff;
+        }
+        return curr;
+    }
+
     /** Hash table of diffs. */
     unordered_map<K, Diff*> key_value_store;
 
@@ -78,7 +97,7 @@ public:
         if (!key_value_store[key]) {
             // key previously not instantiated
             return;
-        } else if (key_value_store[key]->snapshot != maxVersion()) {
+        } else if (key_value_store[key]->version != maxVersion()) {
             // key exists but not for current version
             Diff* diff = newDiff();
             diff->deleted = true;
@@ -88,18 +107,19 @@ public:
             // key exists for current version
             key_value_store[key]->deleted = true;
         }
+        sizes.back() -= 1;
         checkAndDeleteRedundantDiff(key);
     }
 
     /** Returns true if value exists for key. Returns false otherwise. */
     bool exists(K key) {
-        return !key_value_store[key] || !key_value_store[key]->deleted;
+        return key_value_store[key] && !key_value_store[key]->deleted;
     }
 
     /** Returns true if value existed for key for corresponding version_num. */
-    bool exits(K key, unsigned version_num) {
-        // TODO: implement me
-        return true;
+    bool exists(K key, unsigned version_num) {
+        Diff* diff = traverseToVersion(key, version_num);
+        return diff && !diff->deleted;
     }
 
     /** Gets value for key. Returns default value for typename V if no value was set. */
@@ -115,8 +135,11 @@ public:
      * Returns current value for key if no such snapshot for version_num is found.
      */
     V get(K key, unsigned version_num) {
-        // TODO: implement me
-        return V();
+        if (!exists(key, version_num)) {
+            return V();
+        }
+        Diff* diff = traverseToVersion(key, version_num);
+        return diff->value;
     }
 
     /** Returns the current version number of the key value store. Version number starts at 0. */
@@ -131,8 +154,12 @@ public:
             Diff* diff = newDiff();
             diff->value = value;
             key_value_store[key] = diff;
-        } else if (key_value_store[key]->snapshot != maxVersion()) {
+            sizes.back() += 1;
+        } else if (key_value_store[key]->version != maxVersion()) {
             // key exists but not for current version
+            if (key_value_store[key]->deleted) {
+                sizes.back() += 1;
+            }
             Diff* diff = newDiff();
             diff->value = value;
             diff->prev_diff = key_value_store[key];
@@ -166,7 +193,9 @@ public:
      * Returns corresponding version number for the snapshot. 
      */
     unsigned save() {
+        unsigned version = maxVersion();
         sizes.push_back(size());
+        return version;
     }
 };
 
