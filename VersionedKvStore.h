@@ -89,7 +89,17 @@ public:
 
     /** Destructor. */
     ~VersionedKvStore() {
-        // TODO: delete diffs
+        vector<Diff*> garbage;
+        for (auto it = key_value_store.begin(); it != key_value_store.end(); ++it) {
+            Diff* diff = it->second;
+            while (diff) {
+                garbage.push_back(diff);
+                diff = diff->prev_diff;
+            }
+        }
+        for (Diff* diff : garbage) {
+            delete diff;
+        }
     }
 
     /** Deletes the value stored for key. */
